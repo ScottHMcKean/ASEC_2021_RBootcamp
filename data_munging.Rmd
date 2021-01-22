@@ -1,0 +1,154 @@
+---
+title: "Data Munging, Visualization, and Feature Engineering"
+author: "Scott McKean"
+date: "2020-01-19"
+output: html_document
+---
+
+This notebook provides an introduction to data munging in the tidyverse. Why
+tidyverse you might ask? Personally, I find it a really nice way to learn the 
+'grammar of graphics' and 'grammar of data' - probably the best intro in my 
+opinion, which is why I love teaching it.
+
+The agenda for this part of the bootcamp includes:
+
+1. Loading data w/ readr
+2. Dates and times w/ lubridate
+3. Tidy data concepts w/ tidyr
+4. Feature engineering w/ dplyr
+5. Visualization w/ ggplot2
+
+We will need the following libraries for this bootcamp
+
+```{r}
+library(lubridate)
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+```
+
+## Loading data w/ readr
+
+The first thing we need to do with data is consistently load it. R has some 
+basic functionality with `read.csv`, and data.table is the best for large
+datasets, using `fread`, but here we are going to demo a load an inspect for
+the demo data.
+
+https://readr.tidyverse.org/
+Check out the cheat sheet here, paying attention to the 'write' functions
+
+My general formula for loading data:
+1) Load it (does it fail?)
+2) Run head()
+3) Look at the dimensions
+4) Check the column data types
+
+```{r}
+energy = readr::read_csv("./data/energy_dataset.csv")
+
+#old school
+head(energy)
+dim(energy)
+str(energy)
+summary(energy)
+
+#lazy school
+colnames(energy)
+energy
+```
+Here we are going to load the weather data, which is a much larger table.
+
+```{r}
+weather = readr::read_csv("./data/weather_features.csv")
+summary(weather)
+
+# how many cities are there?
+weather %>% 
+  pull(city_name) %>%
+  factor() %>% 
+  unique()
+```
+## Tidy data concepts w/ tidyr
+
+There is a well defined concept of 'tidy data' which is well summarized in this paper: https://vita.had.co.nz/papers/tidy-data.pdf
+
+To quote the paper, in tidy data:
+1. Each variable forms a column.
+2. Each observation forms a row.
+3. Each type of observational unit forms a table.
+
+The concept of 'wide' and 'long' tables is really important in data science,
+and worth chatting about. In our data, we are fortunate that both `energy` and `weather` are long tables.
+
+Long tables are pretty nice when doing summaries and graphs, but can be difficult
+to use in machine learning models or summarize properly. For example, if you
+wanted to facet a ggplot among several groups, you will need a long table.
+
+We can pivot tables back and forth relatively easily in R using the tidyr package. Read more and check out the cheat sheet here: https://tidyr.tidyverse.org/
+
+```{r}
+# long frames are useful
+ggplot(weather) +
+  geom_histogram(aes(x=temp), bins=40) +
+  facet_wrap(. ~ city_name, scales='free') +
+  xlab('Temperature')
+```
+## Dates and times w/ lubridate
+
+https://lubridate.tidyverse.org/
+
+Working with dates is hard and constantly a struggle, especially when working
+with anything excel has touched. I would really encourage everyone to look at and follow the ISO8601 format, and really understanding how dates are dealt with. 
+
+Since the hackathon is really time-series data, we need to be sure that dates and times are encoded exactly the same.
+
+```{r}
+# filter to Barcelona
+barcelona_weather = weather %>%
+  filter(city_name == 'Barcelona')
+
+ggplot(barcelona_weather) +
+  geom_line(aes(x=dt_iso, y=temp))
+```
+
+## Visualization w/ ggplot2
+ggplot2 (grammar of graphics plotting) is in my opinion the best user interface
+for static plots. There are so many visualization tools that no single tool
+will be the best, but ggplot2 often beats any other tool I use.
+
+https://ggplot2.tidyverse.org/
+
+I'd recommend looking at histograms, line plots, and the other wide range
+of things ggplot can do. Let's do three 'experiments'
+
+Does temperature correlate with pressure?
+Does total load correlate with temperature?
+
+```{r}
+ggplot(weather) +
+  geom_point(aes(x=pressure, y=temp, color=city_name))
+
+# wait outliers?!
+# can trial and error explore with xlim
+ggplot(weather) +
+  geom_point(aes(x=pressure, y=temp, color=city_name)) +
+  xlim(900,1100)
+```
+
+
+```{r}
+barcelona_temp = weather %>%
+  filter(city_name == 'Barcelona') %>%
+  select(time = dt_iso, temp)
+
+total_load = energy %>%
+  select(time, load='total load actual')
+
+ts_merge = merge(barcelona_temp, total_load, on='time')
+
+# doesn't look good!
+ggplot(ts_merge) +
+  geom_point(aes(x=temp, y=load)) 
+```
+
+

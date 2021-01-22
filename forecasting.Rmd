@@ -1,0 +1,151 @@
+---
+title: "Data Manipulation and Modeling"
+author: "Scott McKean"
+date: "2021-01-22"
+output: html_document
+---
+
+This notebook builds on some of the visualization and R fundamentals and dives
+into the world of data manipulation and modeling in R. The challenge you face
+is difficult - time series are some of the hardest modeling problems 
+because they are noisy, they have trends and seasonality, and they are autocorrelated.
+
+I won't be able to teach time series analysis in an hour, but I can point you
+to some techniques that might help you on your forecasting journey. R is an
+amazing tool for time series modeling and investigation, you just need to know
+where to look.
+
+We are going to focus on two things: 
+1) A grammar of data manipulation
+2) Time series analysis
+
+```{r}
+# grammar of data
+library(dplyr)
+library(lubridate)
+library(janitor)
+library(ggplot2)
+library(readr)
+
+# time series
+library(zoo)
+library(forecast)
+```
+
+# Load Data
+
+```{r}
+energy = readr::read_csv("./data/energy_dataset.csv") %>%
+  janitor::clean_names()
+weather = readr::read_csv("./data/weather_features.csv") %>%
+  janitor::clean_names()
+```
+# Grammar of Data
+
+In order to ask the right questions, you need to be able to aggregate and 
+disaggregate data. We use the dplyr package to generate some summary statistics
+and look at our data.
+
+The most important verbs you need to know:
+- select
+- filter
+- mutate
+- group_by
+- summarize
+
+Learn WAY more here:
+https://dplyr.tidyverse.org/
+
+```{r}
+# Extract year, month, week, day of week 
+energy <- energy %>%
+  mutate(year = year(time)) %>%
+  mutate(month = month(time)) %>%
+  mutate(week = week(time)) %>%
+  mutate(day = day(time)) %>%
+  mutate(day_of_week = wday(time)) %>%
+  mutate(date = lubridate::date(time))
+
+# Now we can start plotting some interesting things
+# yearly trend boxplot
+ggplot(energy) +
+  geom_boxplot(aes(y=total_load_actual, group=year))
+
+# yearly trend timeseries w/ groups
+day_of_week_summary = energy %>% 
+  group_by(year, day_of_week) %>% 
+  summarise_all(mean, na.rm=TRUE)
+
+ggplot(day_of_week_summary) +
+  geom_point(aes(x=day_of_week, y=total_load_actual, colour=year))
+
+# be careful about sat/sun
+# 2014 data is suspect (low observations)
+
+# monthly trend
+ggplot(energy) +
+  geom_boxplot(aes(y=total_load_actual, group=month))
+```
+# Time Series
+
+We are going to talk about three packages and approaches to forecasting
+
+```{r}
+# let's decompose actual electricity demand
+# but start with daily observations
+daily_demand = energy %>%
+  group_by(date) %>%
+  summarize_all(mean) %>%
+  select(date, total_load_actual)
+  
+daily_demand_ts = as.ts(read.zoo(daily_demand))
+daily_demand_ts
+
+?decompose
+
+# first problem - NAs!
+# second problem - One 2014 observation!
+daily_demand = energy %>%
+  filter(date >= ymd('2015-01-01')) %>%
+  group_by(date) %>%
+  summarize_all(mean, na.rm=TRUE) %>%
+  select(date, total_load_actual)
+
+# make a 'time-series'. This is important
+daily_ts = ts(
+  daily_demand$total_load_actual, 
+  start=c(2015,01,01), frequency=365.25
+  )
+
+# forecast is awesome - ggplot + time series
+autoplot(daily_ts) +
+  ggtitle('Actual Load') +
+  ylab('kWh') +
+  xlab('Date')
+```
+
+Let's talk about time series decomposition
+https://buildmedia.readthedocs.org/media/pdf/a-little-book-of-r-for-time-series/latest/a-little-book-of-r-for-time-series.pdf
+
+```{r}
+daily_ts %>%
+  stl(t.window=13, s.window="periodic", robust=TRUE) %>%
+  autoplot()
+```
+
+Finally, let's talk about ARIMA models in three lines of code!
+https://otexts.com/fpp2/
+
+
+```{r}
+# Fit an ARIMA model in three lines of code
+fit = auto.arima(daily_ts)
+checkresiduals(fit)
+autoplot(forecast(fit))
+
+# Try another style of model
+daily_ts %>% 
+  ets() %>% 
+  forecast() %>% 
+  autoplot()
+```
